@@ -25,7 +25,6 @@ library(truncnorm)
 #========================================#
 # Configurations                         #
 #========================================#
-# 進捗表示の有効化
 handlers(handler_txtprogressbar)
 handlers(global = TRUE)
 options(
@@ -42,8 +41,7 @@ time_window_width <- 24        # time windowの幅（時間）
 n_simul_min       <- 10000     # Monte Carlo simulationの最低症例数（gfoRmulaで使用）
 size              <- NULL      # bootstrapサンプルサイズ（NULLなら元の症例数を使う）
 
-# memory管理
-total_ram     <- 90 * 1024^3  # 90GB, 環境に合わせて適切に設定する
+total_ram     <- 90 * 1024^3  # 利用可能RAMに合わせて調整
 max_workers   <- detectCores() - 1 
 print(sprintf("Detected %d CPU cores, using up to %d workers", detectCores(), max_workers))
 ram_use_frac  <- 0.7          # 利用するRAMの割合
@@ -55,12 +53,10 @@ subgroup_filters <- rlang::quos(
   sofa_less_than_10      = (sofa_score < 10),
   apache2_25_or_higher   = (apache2_score >= 25),
   apache2_less_than_25   = (apache2_score < 25),
-  # Day-1 / baseline window (time_window_index == 0) PT-INR
   pt_inr_1_6_or_higher   = (!is.na(pt_inr) & pt_inr >= 1.6),
   pt_inr_less_than_1_6   = (!is.na(pt_inr) & pt_inr < 1.6)
 )
 
-# flags
 # Usage:
 #   Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 25
 #   Rscript scripts/02_gformula.R --sg all --single
@@ -89,8 +85,7 @@ if (length(sg_idx) == 0) {
   chosen_sg <- args[sg_idx + 1]
 }
 
-# When sourced as a module (diagnostics / sensitivity wrappers), CLI --sg may be
-# absent or irrelevant; skip strict validation in that case.
+# gformula.source_only=TRUE のときは他スクリプトから source される想定
 if (!isTRUE(getOption("gformula.source_only", FALSE))) {
   if (!chosen_sg %in% names(subgroup_filters)) {
     stop(
@@ -102,7 +97,7 @@ if (!isTRUE(getOption("gformula.source_only", FALSE))) {
   chosen_sg <- "all"
 }
 
-# Interventions: start 6-day rTM course on calendar day 1 or 2 (+ no_TM control)
+# 介入: day1/day2 から6日間 rTM（有害事象で中止）+ no_TM
 tm_start_days <- c(1:2)
 
 message(sprintf(
@@ -120,8 +115,6 @@ message(sprintf(
 #========================================#
 estimate_bytes_per_row <- function(df_filtered, sample_n = 50000L) {
   n <- nrow(df_filtered)
-  # データから最大 sample_n 行（デフォルト5万行）をランダムにサンプリング
-  # (全体が sample_n 行未満なら全行を使う)
   s <- df_filtered[sample.int(n, min(sample_n, n)), ]
   return(as.numeric(object.size(s)) / nrow(s))
 }
@@ -160,30 +153,17 @@ bootstrap_by_icu <- function(df) {
 }
 
 single_imputation <- function(df) {
-  # 補完対象列
   target_cols <- c(
     "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
     "sofa_score"
   )
-  # 以下のbinary variableは定義上欠損し得ない
-  # "noradrenaline_equivalent_dose", "mechanical_ventilation_use", "sofa_score",
-  # "heparin_use", "rbc_use", "ffp_use", "pc_use", 
-  # "thrombomodulin_use", "antithrombin_use", "adverse_event"
-  
+
   other_cols <- setdiff(names(df), target_cols)
   if (any(sapply(df[other_cols], function(x) any(is.na(x))))) {
     stop("Error in single_imputation: target_cols 以外に欠損値が含まれています。")
   }
 
-  # Logical bounds on imputed continuous values: matrix rows are
-  # c(column_index, lower, upper). Amelia rejection-samples up to
-  # max.resample, then caps at the nearest edge. Bounds keep imputations
-  # physiologically plausible and prevent negative draws that would break
-  # downstream log / log1p transforms (e.g. lactate, platelet, pt_inr).
-  #
-  # sofa_score uses fixed definitional bounds (not observed range) so subgroup
-  # analyses stay valid. All other imputed continuous covariates use observed
-  # [min, max] in the (bootstrap) sample, matching sim_trunc clipping.
+  # Amelia bounds: sofa は定義域 [0,24]、他は標本の観測 min/max
   fixed_bounds <- list(
     sofa_score = c(0, 24)
   )
@@ -214,7 +194,7 @@ single_imputation <- function(df) {
     ts = "time_window_index",
     polytime = 2,
     noms = c("hospital_id_model", "icu_admission_year"),
-    idvars = NULL, # TODO: outcomeはidvarsに含めるべきか？icu_stay_id, time_window_indexは？
+    idvars = NULL,
     empri = 0.005 * nrow(df),
     p2s = 2,
     parallel = 'no',
@@ -289,8 +269,7 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
     ) %>%
     ungroup()
   
-  # 説明変数のリスト
-  # TODO: g-pool modelはzero-inflated normalをsupportしているか
+  # 説明変数
   static_vars <- c(
     "age", "I(age^2)", "female", "icu_admission_year", "hospital_id_model",
     "respiratory_infection", "abdominal_infection", "urinary_infection",
@@ -298,7 +277,6 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
     "charlson_comorbidity_index",
     "apache2_score"
   )
-  # Discharge-time snapshot: vitals linear; quadratic for SOFA / labs / NEE
   time_varying_vars <- c(
     "sofa_score", "I(sofa_score^2)",
     "bt", "hr", "rr", "mbp", "spo2",
@@ -308,7 +286,6 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
     "mechanical_ventilation_use", "renal_replacement_therapy_use",
     "rbc_use", "ffp_use", "pc_use"
   )
-  # Cumulative ICU exposures: linear only (drop num_*² / mean_ned²)
   cum_vars <- c(
     "mean_ned",
     "num_heparin_use",
@@ -318,7 +295,6 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
     "num_thrombomodulin_use",
     "num_antithrombin_use"
   )
-  # Time: post-discharge + ICU day at discharge; one cross-term only
   time_vars <- c(
     "time", "I(time^2)",
     "time_window_index", "I(time_window_index^2)",
@@ -343,12 +319,7 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
 # 3. g‐formula simulation                #
 #    ICU内シミュレーション               #
 #========================================#
-# Primary analysis (Yeverdays_LE6):
-#   Y: concurrent A + ever_A + ever_A × days_since_first_A
-#   L: E6 = sum(A_{t-1}..A_{t-6}); coag × E6 for platelet / PT-INR
-#   (no lag_cumavg concentration; no rTM history × I(lag1_pt_inr^2))
-#
-# Custom history (gfoRmula): ever_A and days_since_first_A at each t
+# Y: A + ever_A + ever×days_since_first; L: E6 (=lag1..6 of A) + coag×E6
 history_ever_days_since <- function(pool, histvars, time_name, t, id_name) {
   if (!data.table::is.data.table(pool)) {
     stop("history_ever_days_since expects a data.table pool")
@@ -394,7 +365,7 @@ history_ever_days_since <- function(pool, histvars, time_name, t, id_name) {
   invisible(NULL)
 }
 
-# E6_t = A_{t-1} + ... + A_{t-6} (excludes concurrent A_t)
+# E6_t = A_{t-1}+...+A_{t-6}（同時点の A_t は含めない）
 e6_thrombomodulin_use <- paste0(
   "I(",
   paste(sprintf("lag%d_thrombomodulin_use", 1:6), collapse = " + "),
@@ -412,8 +383,6 @@ no_tm_no_at <- function(newdf, pool, intvar, intvals, time_name, t) {
   newdf[, antithrombin_use := 0L]
 }
 
-# Intervention
-# TODO: Interventionコードチェック
 make_tm_6days_from_day_x_stop_if_ae <- function(start_day, time_window_width) {
   force(start_day)
   force(time_window_width)
@@ -466,12 +435,11 @@ int_descript <- c(
   "no_TM"
 )
 
-# gfoRmulaが返すnatural courseの名称と、下流処理で使う名称
+# natural course の名称（gfoRmula返却名 → 下流で使う名前）
 NATURAL_COURSE_GFORMULA <- "Natural course"
 NATURAL_COURSE_NAME     <- "Natural_course"
 all_strategies          <- c(NATURAL_COURSE_NAME, int_descript)
 
-# time-varying共変量（L trajectory可視化とrun_gformula_simulationで共有）
 GFORMULA_COVNAMES <- c(
   "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
   "sofa_score",
@@ -480,21 +448,8 @@ GFORMULA_COVNAMES <- c(
   "heparin_use", "rbc_use", "ffp_use", "pc_use",
   "adverse_event", "thrombomodulin_use", "antithrombin_use"
 )
-# Continuous covtypes:
-#   bt / hr / rr / mbp: normal (identity); sim_trunc clips to observed min/max
-#     in the analysis sample (overall range, not time-specific). Amelia bounds
-#     in single_imputation: sofa_score [0,24] fixed; all other imputed
-#     continuous covariates = observed [min, max] of the bootstrap sample.
-#   spo2: normal + log_comp_101 (log(101 - SpO2); ceiling/left-skew);
-#     inverted after sim so trajectories stay in % scale; sim_trunc still applies
-#   lactate: normal + log1p (zeros allowed)
-#   platelet: normal + sqrt (count-like; log1p overshoots recovery in multi-step NC sim)
-#   pt_inr: normal + log
-#   norad: zero-inflated normal (log1p)
-#   sofa_score: custom truncnorm on definitional [0, 24] — NOT observed range,
-#     because subgroup analyses (e.g. SOFA>=10) would otherwise forbid SOFA<10.
+# sofa は定義域 [0,24] の truncnorm（subgroup の観測範囲に依存させない）
 GFORMULA_CUSTOM_TRUNC_COVNAMES <- c("sofa_score")
-# Definitional bounds for custom truncnorm (sofa is on identity / clinical scale).
 GFORMULA_CUSTOM_TRUNC_BOUNDS <- list(
   sofa_score = c(a = 0, b = 24)
 )
@@ -504,11 +459,11 @@ GFORMULA_COVTYPES <- c(
   "normal",               # hr
   "normal",               # rr
   "normal",               # mbp
-  "normal",               # spo2 (log_comp_101; sim_trunc on modeling range)
-  "normal",               # lactate (log1p-transformed)
-  "normal",               # pt_inr (log-transformed)
-  "normal",               # platelet (sqrt-transformed)
-  "custom",               # sofa_score (rtruncnorm on [0, 24])
+  "normal",               # spo2 (log_comp_101)
+  "normal",               # lactate (log1p)
+  "normal",               # pt_inr (log)
+  "normal",               # platelet (sqrt)
+  "custom",               # sofa_score
   "zero-inflated normal", # noradrenaline_equivalent_dose (log1p)
   "binary",               # mechanical_ventilation_use
   "binary",               # renal_replacement_therapy_use
@@ -518,8 +473,7 @@ GFORMULA_COVTYPES <- c(
 stopifnot(length(GFORMULA_COVNAMES) == length(GFORMULA_COVTYPES))
 names(GFORMULA_COVTYPES) <- GFORMULA_COVNAMES
 
-# Modeling-scale transforms (identity = no change). Applied only for g-formula
-# fit/sim; inverted after simulation so discharge / trajectories stay clinical.
+# モデル用変換（fit/sim 後に clinical scale へ戻す）
 GFORMULA_COV_TRANSFORMS <- c(
   bt = "identity",
   hr = "identity",
@@ -580,7 +534,7 @@ GFORMULA_COVARIATE_PLOT_GROUPS <- list(
   )
 )
 
-# OLS fit on modeling scale; store fixed trunc bounds for predict draws.
+# truncnorm fit（modeling scale）
 fit_cov_truncnorm_2sided <- function(covparams, covname, obs_data, j) {
   fit <- stats::glm(
     stats::as.formula(paste(covparams$covmodels[j])),
@@ -598,8 +552,7 @@ fit_cov_truncnorm_2sided <- function(covparams, covname, obs_data, j) {
   fit
 }
 
-# Draw from N(mu, rmse) truncated to [trunc_a, trunc_b].
-# Signature matches gfoRmula::simulate custom predict call.
+# truncnorm からの予測 draw（gfoRmula custom predict 用）
 predict_cov_truncnorm_2sided <- function(obs_data, newdf, fit, time_name, t,
                                          condition, covname, ...) {
   mu <- as.numeric(stats::predict(fit, newdata = newdf, type = "response"))
@@ -634,8 +587,7 @@ build_gformula_custom_cov_args <- function(covnames,
       preds[[i]] <- NA
     }
   }
-  # gfoRmula custom path references `condition` even when restrictions=NA.
-  # Always-true restriction on time keeps condition defined and never overrides draws.
+  # restrictions=NA だと condition が未定義になるため、常に真の条件を渡す
   restrictions <- lapply(custom_vars, function(v) {
     c(v, "time_window_index >= 0", simple_restriction, 0)
   })
@@ -674,8 +626,7 @@ transform_cov_vector <- function(x, transform, var = NULL, direction = c("forwar
       }
       return(log(x2))
     }
-    # SpO2-style ceiling transform: y = log(101 - s) for s in [0, 100].
-    # Models distance-from-ceiling on a right-skew scale; inverse clips to %.
+    # spo2: log(101 - s)
     if (identical(transform, "log_comp_101")) {
       x2 <- as.numeric(x)
       x2 <- pmin(pmax(x2, 0), 100)
@@ -733,30 +684,13 @@ intvars <- replicate(
 
 run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
                                     followup_length, time_window_width, keep_model_fits = FALSE) {
-  # gfoRmula packageはdata.tableを採用しているので、data.tableに変換しておく
   dt     <- as.data.table(df_boot)
   dt[, source_icu_stay_id := icu_stay_id]
   rm(df_boot); gc()
-  
-  # TODO: 突合表なしでうまく回ることを確認したら削除する
-  # # gfoRmula package 内で実装される id の map 対応表を作成
-  # # https://github.com/CausalInference/gfoRmula/blob/7b0fa3d68bc6637124ac2ae9ea23dd32b486db1c/R/gformula.R#L2707C1-L2712C57
-  # # 後でremapした時の妥当性検証のため、ageを保持しておく
-  # id_map <- dt %>%
-  #   lazy_dt() %>%
-  #   select(icu_stay_id, age) %>%
-  #   group_by(icu_stay_id) %>%
-  #   summarise(age_ref = first(age), .groups = "drop") %>%
-  #   arrange(icu_stay_id) %>%
-  #   mutate(id = row_number()) %>%
-  #   select(id, icu_stay_id, age_ref) %>%
-  #   as.data.table()   
-  # setkey(id_map, id)
-  
+
   n_unique <- length(unique(dt$icu_stay_id))
   n_simul  <- max(n_simul_min, n_unique)
-  
-  # gfoRmulaで必要な列だけ残す（処理の効率化）
+
   columns_to_use <- c(
     "icu_stay_id", "source_icu_stay_id", "time_window_index", "icu_death", "icu_discharge_alive",
     "age", "female", "icu_admission_year", "hospital_id_model",
@@ -770,8 +704,6 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   )
   dt <- dt[, ..columns_to_use]
 
-  # Clinical units → modeling scale (log / log1p). Inverted after simulation so
-  # discharge / trajectories / RData covariates stay in clinical units.
   dt <- apply_gformula_cov_transforms(dt, direction = "forward")
   tr_msg <- GFORMULA_COV_TRANSFORMS[GFORMULA_COV_TRANSFORMS != "identity"]
   message(sprintf(
@@ -782,8 +714,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
     "[run_gformula_simulation] covtypes: %s",
     paste(sprintf("%s=%s", GFORMULA_COVNAMES, GFORMULA_COVTYPES), collapse = " | ")
   ))
-  
-  # basecovs
+
   basecovs <- c(
     "source_icu_stay_id", "age", "female", "icu_admission_year", "hospital_id_model",
     "respiratory_infection", "abdominal_infection", "urinary_infection",
@@ -794,7 +725,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   covnames <- GFORMULA_COVNAMES
   covtypes <- unname(GFORMULA_COVTYPES[covnames])
   
-  # model for Y (Yeverdays): concurrent A + ever_A + ever × days_since_first
+  # Y model
   y_static_vars <- c(
     "age", "I(age^2)", "female", "icu_admission_year", "hospital_id_model",
     "respiratory_infection", "abdominal_infection", "urinary_infection",
@@ -803,7 +734,6 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
     "apache2_score"
   )
 
-  # Vitals linear; quadratic for SOFA / labs / NEE only
   y_time_varying_vars <- c(
     "sofa_score", "I(sofa_score^2)",
     "bt", "hr", "rr", "mbp", "spo2",
@@ -821,7 +751,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   y_all_vars <- c(y_static_vars, y_time_varying_vars, y_time_vars)
   y_formula  <- as.formula(paste("icu_death ~", paste(y_all_vars, collapse = " + ")))
 
-  # model for L, A
+  # L / A models
   l_static_vars <- c(
     "age", "I(age^2)", "female", "icu_admission_year", "hospital_id_model",
     "respiratory_infection", "abdominal_infection", "urinary_infection",
@@ -830,7 +760,6 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
     "apache2_score"
   )
 
-  # lag1 of non-exposure covariates (rTM history injected per outcome family)
   l_cov_lagged_vars <- c(
     "lag1_bt",
     "lag1_hr",
@@ -851,7 +780,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   l_time_vars <- c("time_window_index", "I(time_window_index^2)")
   l_base_vars <- c(l_static_vars, l_cov_lagged_vars, l_time_vars)
 
-  # L rTM: lag1 for most outcomes; E6 + linear coag interactions for labs / SOFA
+  # L の rTM: 多くは lag1、凝固系/SOFA は E6（+線形交互作用）
   l_other_rtm <- "lag1_thrombomodulin_use"
   l_e6_coag_platelet <- c(
     e6_thrombomodulin_use,
@@ -948,11 +877,9 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   })
   names(cov_formulas) <- names(cov_formula_vars)
 
-  # Align covmodels with covnames order (gfoRmula indexes by j)
   covmodels_ordered <- lapply(covnames, function(v) cov_formulas[[v]])
   custom_args <- build_gformula_custom_cov_args(covnames)
 
-  # lagged: lag1.. of L covs and lag1..6 of A for E6; ever/days for Y
   res <- gformula(
     seed          = 813,
     obs_data      = dt,
@@ -984,9 +911,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
     sim_data_b    = TRUE,
     parallel      = FALSE,
     threads       = 1,
-    # After each continuous draw, clip to the covariate's overall observed
-    # min/max in obs_data (not time-specific). sofa_score uses fixed [0, 24]
-    # truncnorm instead (avoids subgroup-observed-range artifacts).
+    # 連続共変量は観測 min/max で clip（sofa は custom truncnorm）
     sim_trunc     = TRUE
   )
   message("[run_gformula_simulation] g-formula 実行完了")
@@ -996,12 +921,11 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   
   process_sim_dt <- function(x_dt) {
     x_dt <- x_dt[, ..columns_to_keep]
-    # Back to clinical units for discharge model / trajectories / pooled logistic
     x_dt <- apply_gformula_cov_transforms(x_dt, direction = "inverse")
     
-    x_dt[, sim_icu_stay_id := id]           # gfoRmulaのidをsimulation用IDとして保存
-    x_dt[, icu_stay_id := sim_icu_stay_id]  # 後続のgroup_by用IDとして使う
-    x_dt[, id := NULL]                      # 内部ID列を削除
+    x_dt[, sim_icu_stay_id := id]
+    x_dt[, icu_stay_id := sim_icu_stay_id]
+    x_dt[, id := NULL]
     
     return(x_dt[])
   }

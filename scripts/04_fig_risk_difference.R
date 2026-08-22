@@ -1,5 +1,4 @@
-### visualizations ###
-### visualization (risk difference) ###
+### g-formula risk difference ###
 if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
 library(ggplot2)
 if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
@@ -9,13 +8,9 @@ library(tibble)
 if (!requireNamespace("purrr", quietly = TRUE)) install.packages("purrr")
 library(purrr)
 
-#========================================#
-# Configurations                         #
-#========================================#
 # Usage:
 #   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822
-data_dir   <- './data/'
-output_dir <- './output/'
+output_dir <- "./output/"
 plot_time_window_index <- 28
 dpi_out <- 600
 
@@ -43,14 +38,12 @@ if (requireNamespace("systemfonts", quietly = TRUE)) {
   if ("Arial" %in% fonts) font_family <- "Arial"
 }
 
-# 1. Load Output
 rdata_file <- file.path(output_dir, paste0(date, "_gformula_ci_24hr_", sg, ".RData"))
 if (!file.exists(rdata_file)) {
   stop("RData file not found: ", rdata_file)
 }
 load(rdata_file)
 
-# 2. Visualization
 dfc <- results[[paste0("combined_", sg)]]
 if (is.null(dfc)) {
   stop(
@@ -59,7 +52,7 @@ if (is.null(dfc)) {
   )
 }
 
-tm_start_days <- if (exists("tm_start_days")) tm_start_days else c(1:2)
+tm_start_days <- if (exists("tm_start_days")) tm_start_days else 1:2
 
 risk_diff_df <- tibble(
   tm_day = tm_start_days,
@@ -106,9 +99,7 @@ p_risk_diff <- ggplot(
   ) +
   geom_point(size = 2.5) +
   geom_line(linewidth = 0.7) +
-  scale_x_continuous(
-    breaks = tm_start_days
-  ) +
+  scale_x_continuous(breaks = tm_start_days) +
   labs(
     x = "TM Start Day",
     y = "Risk Difference",
@@ -128,10 +119,7 @@ tryCatch(print(p_risk_diff), error = function(e) {
 
 f_risk_diff <- file.path(
   outdir,
-  sprintf(
-    "%s_g_risk_diff_%shr_%s.png",
-    date, time_window_width, sg
-  )
+  sprintf("%s_g_risk_diff_%shr_%s.png", date, time_window_width, sg)
 )
 
 ggsave(

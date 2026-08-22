@@ -84,7 +84,14 @@ rtm-sepsis-coagulopathy-target-trial-emulation
 │       ├── 2_n_antithrombin_use.sql
 │       ├── 3_rTM_start_time.sql
 │       └── 4_rTM_treatment_days.sql
+├── data/
+├── output/
 └── scripts/
+    ├── 01_preprocess.R
+    ├── 05_table1_baseline.R
+    ├── 06_fig_crude_mortality.R
+    ├── 07_fig_rtm_treatment_history.R
+    └── 08_table_missingness.R
 ```
 
 - renv
@@ -99,8 +106,10 @@ rtm-sepsis-coagulopathy-target-trial-emulation
     - `patient_flow_diagram/`: cohort counts for the patient flow diagram
     - `treatments/`: rTM and antithrombin use summaries
     - `icu_length_of_stay/`: ICU length-of-stay summaries overall and by rTM use
+- data / output
+  - Local input data and generated analysis outputs. Contents are gitignored; only empty directory placeholders are tracked.
 - scripts
-  - Contains R scripts used for data preparation, parametric g-formula simulations, and visualization.
+  - Contains R scripts used for data preparation and descriptive analyses / figures. Additional modeling scripts will be added after code review.
 
 ---
 

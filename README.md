@@ -115,7 +115,18 @@ rtm-sepsis-coagulopathy-target-trial-emulation
 
 ## Usage
 
-To Be Edited
+### Start the analysis environment (Docker)
+
+From the project root directory, run:
+
+```
+cd rocker
+bash up.sh
+```
+
+Then open RStudio Server at [http://localhost:8787](http://localhost:8787) (password: `password`). The repository is mounted at `/home/rstudio/repository`.
+
+Analysis scripts and step-by-step run instructions will be added once the reviewed analysis files have been migrated to this repository.
 
 ---
 

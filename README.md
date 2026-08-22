@@ -33,7 +33,6 @@ Statistical analyses were conducted in R, and data extraction used SQL. This rep
 rtm-sepsis-coagulopathy-target-trial-emulation
 ├── README.md
 ├── LICENSE
-├── DESCRIPTION
 ├── .Rprofile
 ├── .Rbuildignore
 ├── renv.lock
@@ -92,8 +91,8 @@ rtm-sepsis-coagulopathy-target-trial-emulation
   - Contains files required to reproduce the exact R package environment used in the analysis.
 - rocker
   - Contains a Dockerfile for building a containerized R environment consistent with the analysis setup.
-- DESCRIPTION / `.Rprofile` / `.Rbuildignore`
-  - Package metadata and renv project activation settings for the R analysis environment.
+- `.Rprofile` / `.Rbuildignore`
+  - Project settings for renv activation.
 - sql
   - Contains SQL queries used in the study:
     - `data_extraction/`: analysis dataset pipeline in order—cohort and labels (`01`–`05`), time-varying features (`11`–`26`), then join, forward-filling, and final extraction up to 28 days (`31`–`33`)

@@ -88,10 +88,14 @@ rtm-sepsis-coagulopathy-target-trial-emulation
 ├── output/
 └── scripts/
     ├── 01_preprocess.R
+    ├── 02_gformula.R
+    ├── 03_fig_gformula_mortality.R
+    ├── 04_fig_risk_difference.R
     ├── 05_table1_baseline.R
     ├── 06_fig_crude_mortality.R
     ├── 07_fig_rtm_treatment_history.R
-    └── 08_table_missingness.R
+    ├── 08_table_missingness.R
+    └── run_analysis.sh
 ```
 
 - renv
@@ -109,7 +113,7 @@ rtm-sepsis-coagulopathy-target-trial-emulation
 - data / output
   - Local input data and generated analysis outputs. Contents are gitignored; only empty directory placeholders are tracked.
 - scripts
-  - Contains R scripts used for data preparation and descriptive analyses / figures. Additional modeling scripts will be added after code review.
+  - Contains R scripts for preprocessing, parametric g-formula estimation, and figures/tables, plus `run_analysis.sh` to run the main analysis pipeline.
 
 ---
 
@@ -135,7 +139,57 @@ bash up.sh
 
 Then open RStudio Server at [http://localhost:8787](http://localhost:8787) (password: `password`). The repository is mounted at `/home/rstudio/repository`.
 
-Analysis scripts and step-by-step run instructions will be added once the reviewed analysis files have been migrated to this repository.
+### Prepare the analysis dataset
+
+Place the extracted CSV under `data/` (for example `data/260822_df_all.csv`), then from the project root run:
+
+```
+Rscript scripts/01_preprocess.R
+```
+
+This writes `data/df_260822_all.RData` used by the downstream scripts. Adjust the `date` setting inside each script if your file prefix differs.
+
+### Run the main analysis (g-formula)
+
+The main pipeline estimates per-protocol effects with bootstrap confidence intervals and builds the primary figures:
+
+```
+bash scripts/run_analysis.sh
+```
+
+Optional environment variables:
+
+```
+DATE=260822 N_ITER=500 SG=all bash scripts/run_analysis.sh
+DATE=260822 N_ITER=25 SGS=all,sofa_10_or_higher bash scripts/run_analysis.sh
+VISUALIZE=0 DATE=260822 N_ITER=25 SG=all bash scripts/run_analysis.sh
+```
+
+- `DATE`: YYMMDD prefix matching the preprocessed data (default: `260822`)
+- `N_ITER`: number of bootstrap iterations (default: `500`)
+- `SG` / `SGS`: subgroup name, or comma-separated list (default: `all`)
+- `VISUALIZE`: set to `0` to skip figure scripts `03` and `04` (default: `1`)
+
+You can also call the scripts directly, for example:
+
+```
+Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 500
+Rscript scripts/03_fig_gformula_mortality.R --date 260822 --sg all
+Rscript scripts/04_fig_risk_difference.R --date 260822 --sg all
+```
+
+Results are written to `output/` (logs under `output/logs/`).
+
+### Descriptive tables and figures
+
+After preprocessing, run from the project root as needed:
+
+```
+Rscript scripts/05_table1_baseline.R
+Rscript scripts/06_fig_crude_mortality.R
+Rscript scripts/07_fig_rtm_treatment_history.R
+Rscript scripts/08_table_missingness.R
+```
 
 ---
 

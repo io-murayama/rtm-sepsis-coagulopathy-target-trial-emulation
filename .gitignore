@@ -1,0 +1,8 @@
+# Local analysis data and generated outputs (not published)
+data/*
+!data/.gitkeep
+output/*
+!output/.gitkeep
+
+# macOS
+.DS_Store

@@ -945,7 +945,6 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
 }
 
 get_discharge_model <- function(df) {
-  # model for ICU discharge (aligned with Y / post-ICU simplifications)
   c_static_vars <- c(
     "age", "I(age^2)", "female", "icu_admission_year", "hospital_id_model",
     "respiratory_infection", "abdominal_infection", "urinary_infection",
@@ -953,7 +952,6 @@ get_discharge_model <- function(df) {
     "charlson_comorbidity_index",
     "apache2_score"
   )
-  # Vitals linear; quadratic for SOFA / labs / NEE only
   c_time_varying_vars <- c(
     "sofa_score", "I(sofa_score^2)",
     "bt", "hr", "rr", "mbp", "spo2",

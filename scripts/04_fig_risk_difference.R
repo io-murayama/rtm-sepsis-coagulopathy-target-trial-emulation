@@ -110,7 +110,7 @@ p_risk_diff <- ggplot(
   labs(
     x = "Risk Difference (vs no TM)",
     y = NULL,
-    title = paste0("Risk Difference at Day ", plot_day)
+    title = paste0("Risk Difference at Day ", plot_day, " (", sg, ")")
   ) +
   theme_classic() +
   theme(

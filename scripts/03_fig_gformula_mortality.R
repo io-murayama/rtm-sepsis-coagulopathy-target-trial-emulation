@@ -1,6 +1,4 @@
-### visualizations ###
-### visualization (survival curves) ###
-### Outputs first / second / combined stage curves from gformula CI RData.
+### g-formula mortality curves ###
 if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
 library(dplyr)
 if (!requireNamespace("tidyr", quietly = TRUE)) install.packages("tidyr")
@@ -8,17 +6,15 @@ library(tidyr)
 if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
 library(ggplot2)
 
-#========================================#
-# Configurations                         #
-#========================================#
 # Usage:
 #   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822
 #   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822 --stages first,second,combined
-data_dir   <- './data/'
-output_dir <- './output/'
+#   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822 --tw 24
+output_dir <- "./output/"
 ylim <- 0.40
 y_breaks_by <- 0.10
 dpi_out <- 600
+tw_hr <- 24L
 
 args <- commandArgs(trailingOnly = TRUE)
 flag_value <- function(args, flag, default = NULL) {
@@ -40,9 +36,13 @@ dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 stages <- parse_csv(flag_value(args, "--stages", NULL), c("first", "second", "combined"))
 unknown_stages <- setdiff(stages, c("first", "second", "combined"))
 if (length(unknown_stages)) {
-  stop("Unknown --stages: ", paste(unknown_stages, collapse = ", "),
-       ". Allowed: first, second, combined")
+  stop(
+    "Unknown --stages: ", paste(unknown_stages, collapse = ", "),
+    ". Allowed: first, second, combined"
+  )
 }
+tw_hr <- suppressWarnings(as.integer(flag_value(args, "--tw", as.character(tw_hr))))
+if (is.na(tw_hr) || tw_hr < 1L) stop("--tw must be a positive integer.")
 
 strategy_colors <- c(
   TM_day1_surv_mean = "#084594",
@@ -52,8 +52,13 @@ strategy_colors <- c(
 
 stage_titles <- c(
   first = "First stage (in-ICU mortality)",
-  second = "Second stage (post-ICU survival)",
+  second = "Second stage (post-ICU mortality)",
   combined = "Combined (overall mortality)"
+)
+
+tm_strategy_labels <- c(
+  `1` = "rTM initiated within 24 hours",
+  `2` = "rTM initiated at 24-48 hours"
 )
 
 font_family <- "sans"
@@ -62,8 +67,10 @@ if (requireNamespace("systemfonts", quietly = TRUE)) {
   if ("Arial" %in% fonts) font_family <- "Arial"
 }
 
-# 1. Load Output
-rdata_file <- file.path(output_dir, paste0(date, "_gformula_ci_24hr_", sg, ".RData"))
+rdata_file <- file.path(
+  output_dir,
+  paste0(date, "_gformula_ci_", tw_hr, "hr_", sg, ".RData")
+)
 if (!file.exists(rdata_file)) {
   stop("RData file not found: ", rdata_file)
 }
@@ -72,13 +79,15 @@ load(rdata_file)
 if (exists("int_descript")) {
   tm_days <- paste0(int_descript[grepl("^TM_day", int_descript)], "_surv_mean")
 } else {
-  tm_days <- paste0("TM_day", c(1:2), "_surv_mean")
+  tm_days <- paste0("TM_day", 1:2, "_surv_mean")
 }
 no_tm_col <- "no_TM_surv_mean"
-natural_course_col <- paste0(
-  if (exists("NATURAL_COURSE_NAME")) NATURAL_COURSE_NAME else "Natural_course",
-  "_surv_mean"
-)
+
+label_for_tm_col <- function(col) {
+  day <- sub("^TM_day(\\d+)_surv_mean$", "\\1", col)
+  lab <- unname(tm_strategy_labels[day])
+  if (is.na(lab)) paste0("rTM day ", day) else lab
+}
 
 build_surv_plot <- function(dfc, stage) {
   if (is.null(dfc)) {
@@ -89,40 +98,24 @@ build_surv_plot <- function(dfc, stage) {
   }
 
   surv_cols <- c(tm_days, no_tm_col)
-  if (natural_course_col %in% names(dfc)) {
-    surv_cols <- c(natural_course_col, surv_cols)
-  } else {
-    available_surv_cols <- grep("_surv_mean$", names(dfc), value = TRUE)
-    stop(
-      "Natural course column not found in stage '", stage, "' of ", rdata_file, ".\n",
-      "Loaded subgroup: ", sg, "\n",
-      "Available survival columns: ", paste(available_surv_cols, collapse = ", ")
-    )
-  }
-
   missing_cols <- setdiff(surv_cols, names(dfc))
   if (length(missing_cols)) {
-    stop("Missing survival columns in stage '", stage, "': ",
-         paste(missing_cols, collapse = ", "))
+    stop(
+      "Missing survival columns in stage '", stage, "': ",
+      paste(missing_cols, collapse = ", ")
+    )
   }
 
-  strategy_levels <- surv_cols
-  strategy_labels <- stats::setNames(
-    surv_cols,
-    c(
-      if (natural_course_col %in% surv_cols) "Natural course",
-      paste0("TM day ", sub("^TM_day", "", sub("_surv_mean$", "", tm_days))),
-      "No TM"
-    )
+  strategy_labels <- c(
+    stats::setNames(vapply(tm_days, label_for_tm_col, character(1)), tm_days),
+    stats::setNames("no rTM", no_tm_col)
   )
+  strategy_labels <- strategy_labels[surv_cols]
 
   pal_col <- c(
     stats::setNames(strategy_colors[tm_days], tm_days),
-    "no_TM_surv_mean" = "#7A7A7A"
+    no_TM_surv_mean = "#7A7A7A"
   )
-  if (natural_course_col %in% surv_cols) {
-    pal_col <- c(setNames("#000000", natural_course_col), pal_col)
-  }
 
   df_long <- dfc %>%
     dplyr::select(time_points, all_of(surv_cols)) %>%
@@ -133,7 +126,7 @@ build_surv_plot <- function(dfc, stage) {
     ) %>%
     dplyr::mutate(
       mortality = 1 - survival,
-      strategy = factor(strategy, levels = strategy_levels)
+      strategy = factor(strategy, levels = surv_cols)
     )
 
   ggplot(df_long, aes(x = time_points, y = mortality, colour = strategy)) +
@@ -148,7 +141,7 @@ build_surv_plot <- function(dfc, stage) {
     ) +
     scale_colour_manual(values = pal_col, labels = strategy_labels) +
     labs(
-      title  = stage_titles[[stage]],
+      title  = paste0(stage_titles[[stage]], " (", sg, ")"),
       x      = "Days Since Time 0",
       y      = "Mortality",
       colour = "Treatment Strategy"
@@ -165,7 +158,6 @@ build_surv_plot <- function(dfc, stage) {
     )
 }
 
-# 2. Visualization for each stage
 for (stage in stages) {
   dfc <- results[[paste0(stage, "_", sg)]]
   p <- build_surv_plot(dfc, stage)

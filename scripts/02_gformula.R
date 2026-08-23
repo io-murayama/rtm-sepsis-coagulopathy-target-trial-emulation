@@ -58,7 +58,7 @@ subgroup_filters <- rlang::quos(
 # Usage:
 #   Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 25
 #   Rscript scripts/02_gformula.R --sg all --single
-#   Rscript scripts/02_gformula.R --sg all --single --cov-inv   # reverse covariate order
+#   Rscript scripts/02_gformula.R --sg all --single --cov-inv   # reverse L order; TM/AT stay last
 args          <- commandArgs(trailingOnly = TRUE)
 flag_value <- function(args, flag, default = NULL) {
   idx <- which(args == flag)
@@ -691,7 +691,14 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   )
   
   covnames_fwd <- GFORMULA_COVNAMES
-  covnames <- if (isTRUE(use_cov_inv)) rev(covnames_fwd) else covnames_fwd
+  treatment_covs <- c("thrombomodulin_use", "antithrombin_use")
+  l_covnames_fwd <- setdiff(covnames_fwd, treatment_covs)
+  # --cov-inv: reverse L only; keep A (TM/AT) last
+  covnames <- if (isTRUE(use_cov_inv)) {
+    c(rev(l_covnames_fwd), treatment_covs)
+  } else {
+    covnames_fwd
+  }
   covtypes <- unname(GFORMULA_COVTYPES[covnames])
   message(sprintf(
     "[run_gformula_simulation] cov order (%s): %s",
@@ -787,8 +794,6 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   l_other <- c(l_base_vars, l_other_rtm)
 
   # Contemporaneous predictors follow simulation order (fwd or inv).
-  # Treatment models (TM/AT) keep a_all_vars, matching Dynamic-Transfusion-Strategy --cov-inv.
-  treatment_covs <- c("thrombomodulin_use", "antithrombin_use")
   build_cov_formula_vars <- function(ord) {
     out <- list()
     seen <- character(0)

@@ -171,7 +171,7 @@ COV_INV=1 DATE=260822 N_ITER=25 SG=all bash scripts/run_analysis.sh
 - `N_ITER`: number of bootstrap iterations (default: `500`)
 - `SG` / `SGS`: subgroup name, or comma-separated list (default: `all`)
 - `VISUALIZE`: set to `0` to skip figure scripts `03`, `04`, and `09` (default: `1`)
-- `COV_INV`: set to `1` to reverse the within-time covariate modeling order (`--cov-inv`; default: forward)
+- `COV_INV`: set to `1` to reverse the within-time **covariate (L)** modeling order while keeping TM/AT last (`--cov-inv`; default: forward)
 
 You can also call the scripts directly, for example:
 
@@ -181,7 +181,7 @@ Rscript scripts/03_fig_gformula_mortality.R --date 260822 --sg all
 Rscript scripts/04_fig_risk_difference.R --date 260822 --sg all
 Rscript scripts/02_gformula.R --sg all --single --date 260822
 Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
-# Sensitivity: reverse covariate order
+# Sensitivity: reverse L covariate order (TM/AT remain last)
 Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 500 --cov-inv
 Rscript scripts/02_gformula.R --sg all --single --date 260822 --cov-inv
 ```

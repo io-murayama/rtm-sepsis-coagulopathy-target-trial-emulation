@@ -58,8 +58,8 @@ if (!plot_day %in% dfc$time_points) {
 
 tm_start_days <- if (exists("tm_start_days")) tm_start_days else 1:2
 strategy_labels <- c(
-  `1` = "rTM initiated within 24 hours",
-  `2` = "rTM initiated at 24-48 hours"
+  `1` = "rTM initiated\nwithin 24 hours",
+  `2` = "rTM initiated\nat 24-48 hours"
 )
 
 risk_diff_df <- tibble(
@@ -124,8 +124,10 @@ p_risk_diff <- ggplot(
   theme(
     text       = element_text(family = font_family),
     axis.text  = element_text(size = 16),
+    axis.text.y = element_text(lineheight = 0.95),
     axis.title = element_text(size = 16),
-    plot.title = element_text(size = 18)
+    plot.title = element_text(size = 18),
+    plot.margin = margin(10, 10, 10, 10)
   )
 
 tryCatch(print(p_risk_diff), error = function(e) {

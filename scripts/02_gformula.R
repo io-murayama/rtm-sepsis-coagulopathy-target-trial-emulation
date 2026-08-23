@@ -52,9 +52,7 @@ subgroup_filters <- rlang::quos(
   sofa_10_or_higher      = (sofa_score >= 10),
   sofa_less_than_10      = (sofa_score < 10),
   apache2_25_or_higher   = (apache2_score >= 25),
-  apache2_less_than_25   = (apache2_score < 25),
-  pt_inr_1_6_or_higher   = (!is.na(pt_inr) & pt_inr >= 1.6),
-  pt_inr_less_than_1_6   = (!is.na(pt_inr) & pt_inr < 1.6)
+  apache2_less_than_25   = (apache2_score < 25)
 )
 
 # Usage:

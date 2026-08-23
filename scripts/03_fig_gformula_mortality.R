@@ -57,8 +57,8 @@ stage_titles <- c(
 )
 
 tm_strategy_labels <- c(
-  `1` = "rTM initiated\nwithin 24 hours",
-  `2` = "rTM initiated\nat 24-48 hours"
+  `1` = "rTM initiated within 24 hours",
+  `2` = "rTM initiated at 24-48 hours"
 )
 
 font_family <- "sans"
@@ -151,7 +151,7 @@ build_surv_plot <- function(dfc, stage) {
       text            = element_text(family = font_family),
       axis.text       = element_text(size = 16),
       axis.title      = element_text(size = 16),
-      legend.text     = element_text(size = 12, lineheight = 0.95),
+      legend.text     = element_text(size = 12),
       legend.title    = element_text(size = 14),
       legend.position = "right",
       plot.title      = element_text(size = 18)

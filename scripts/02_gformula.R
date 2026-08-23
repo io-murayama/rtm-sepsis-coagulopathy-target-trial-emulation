@@ -1622,7 +1622,6 @@ get_gformula_point_estimate_single_sg <- function(
     followup_length, time_window_width,
     n_simul_min, size = NULL
 ) {
-  # bootstrapなし・1回のpoint estimate（Natural course含む）
   if (!is.null(size)) {
     sampled_ids <- df_filtered %>%
       distinct(icu_stay_id) %>%
@@ -1704,7 +1703,6 @@ if (!isTRUE(getOption("gformula.source_only", FALSE))) {
   rm(df); gc()
 
   if (isTRUE(run_single)) {
-    # bootstrapなし・1回のpoint estimate
     get_gformula_point_estimate_single_sg(
       df_filtered       = df_filtered,
       interventions     = interventions,

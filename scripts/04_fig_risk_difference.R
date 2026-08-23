@@ -5,13 +5,12 @@ if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
 library(dplyr)
 if (!requireNamespace("tibble", quietly = TRUE)) install.packages("tibble")
 library(tibble)
-if (!requireNamespace("purrr", quietly = TRUE)) install.packages("purrr")
-library(purrr)
 
 # Usage:
 #   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822
+#   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822 --day 28
 output_dir <- "./output/"
-plot_time_window_index <- 28
+plot_day <- 28L
 dpi_out <- 600
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -25,12 +24,8 @@ if (!grepl("^[0-9]{6}$", date)) stop("--date must use YYMMDD format.")
 sg <- flag_value(args, "--sg", "all")
 outdir <- flag_value(args, "--outdir", output_dir)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-plot_time_window_index <- suppressWarnings(
-  as.integer(flag_value(args, "--day", as.character(plot_time_window_index)))
-)
-if (is.na(plot_time_window_index) || plot_time_window_index < 1L) {
-  stop("--day must be a positive integer.")
-}
+plot_day <- suppressWarnings(as.integer(flag_value(args, "--day", as.character(plot_day))))
+if (is.na(plot_day)) stop("--day must be an integer.")
 
 font_family <- "sans"
 if (requireNamespace("systemfonts", quietly = TRUE)) {
@@ -49,6 +44,15 @@ if (is.null(dfc)) {
   stop(
     "Result not found for subgroup '", sg, "'. ",
     "Available keys: ", paste(names(results), collapse = ", ")
+  )
+}
+if (!"time_points" %in% names(dfc)) {
+  stop("Column 'time_points' not found in combined results.")
+}
+if (!plot_day %in% dfc$time_points) {
+  stop(
+    "--day=", plot_day, " not found in time_points. ",
+    "Available: ", paste(sort(unique(dfc$time_points)), collapse = ", ")
   )
 }
 
@@ -72,20 +76,21 @@ if (length(missing_cols) > 0L) {
   stop("Missing risk-difference columns: ", paste(missing_cols, collapse = ", "))
 }
 
-risk_diff_plot_df <- pmap_dfr(
-  risk_diff_df,
-  function(tm_day, strategy, mean_col, ul_col, ll_col) {
-    dfc %>%
-      filter(time_points == plot_time_window_index) %>%
-      transmute(
-        tm_day = tm_day,
-        strategy = strategy,
-        risk_diff = .data[[mean_col]],
-        ul = .data[[ul_col]],
-        ll = .data[[ll_col]]
-      )
-  }
-)
+df_day <- dfc %>% filter(time_points == plot_day)
+if (nrow(df_day) != 1L) {
+  stop("Expected 1 row for day ", plot_day, ", found ", nrow(df_day), ".")
+}
+
+risk_diff_plot_df <- risk_diff_df %>%
+  mutate(
+    risk_diff = vapply(mean_col, function(col) df_day[[col]][[1]], numeric(1)),
+    ul = vapply(ul_col, function(col) df_day[[col]][[1]], numeric(1)),
+    ll = vapply(ll_col, function(col) df_day[[col]][[1]], numeric(1))
+  )
+
+if (all(is.na(risk_diff_plot_df$ll) & is.na(risk_diff_plot_df$ul))) {
+  message("[04] CI bounds are NA (point estimate only); plotting means without error bars.")
+}
 
 p_risk_diff <- ggplot(
   risk_diff_plot_df,
@@ -95,15 +100,16 @@ p_risk_diff <- ggplot(
   geom_errorbar(
     aes(ymin = ll, ymax = ul),
     width = 0.3,
-    linewidth = 0.7
+    linewidth = 0.7,
+    na.rm = TRUE
   ) +
   geom_point(size = 2.5) +
   geom_line(linewidth = 0.7) +
   scale_x_continuous(breaks = tm_start_days) +
   labs(
     x = "TM Start Day",
-    y = "Risk Difference",
-    title = paste0("Risk Difference at Day ", plot_time_window_index)
+    y = "Risk Difference (vs no TM)",
+    title = paste0("Risk Difference at Day ", plot_day)
   ) +
   theme_classic() +
   theme(

@@ -683,7 +683,8 @@ intvars <- replicate(
 )
 
 run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
-                                    followup_length, time_window_width, keep_model_fits = FALSE) {
+                                    followup_length, time_window_width,
+                                    keep_model_fits = FALSE, seed = 813L) {
   dt     <- as.data.table(df_boot)
   dt[, source_icu_stay_id := icu_stay_id]
   rm(df_boot); gc()
@@ -881,7 +882,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   custom_args <- build_gformula_custom_cov_args(covnames)
 
   res <- gformula(
-    seed          = 813,
+    seed          = seed,
     obs_data      = dt,
     id            = "icu_stay_id",
     time_name     = "time_window_index",
@@ -1454,8 +1455,11 @@ run_one_iter_for_one_sg <- function(df_filtered, sg_ids, i,
   # 3. ICU内シミュレーション
   #    trajectory保存時は全time pointを残し、at_risk_dischargeで要約してから
   #    生存解析用に最終time windowへ圧縮する（死亡/退室の乱数を共有するため1回だけ実行）
-  g_results       <- run_gformula_simulation(df_boot, interventions, n_simul_min,
-                                             followup_length, time_window_width)
+  g_results       <- run_gformula_simulation(
+    df_boot, interventions, n_simul_min,
+    followup_length, time_window_width,
+    seed = 813L + as.integer(i)
+  )
   discharge_model <- get_discharge_model(df_boot)
 
   covariate_trajectories <- NULL

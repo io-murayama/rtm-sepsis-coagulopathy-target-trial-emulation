@@ -57,6 +57,10 @@ if (!plot_day %in% dfc$time_points) {
 }
 
 tm_start_days <- if (exists("tm_start_days")) tm_start_days else 1:2
+strategy_labels <- c(
+  `1` = "rTM initiated within 24 hours",
+  `2` = "rTM initiated at 24-48 hours"
+)
 
 risk_diff_df <- tibble(
   tm_day = tm_start_days,
@@ -65,8 +69,12 @@ risk_diff_df <- tibble(
   mutate(
     mean_col = paste0(strategy, "_risk_diff_mean"),
     ul_col   = paste0("ul_risk_diff_", strategy),
-    ll_col   = paste0("ll_risk_diff_", strategy)
+    ll_col   = paste0("ll_risk_diff_", strategy),
+    strategy_label = unname(strategy_labels[as.character(tm_day)])
   )
+if (anyNA(risk_diff_df$strategy_label)) {
+  stop("Missing strategy labels for tm_start_days: ", paste(tm_start_days, collapse = ", "))
+}
 
 missing_cols <- setdiff(
   c(risk_diff_df$mean_col, risk_diff_df$ul_col, risk_diff_df$ll_col),
@@ -96,7 +104,7 @@ p_risk_diff <- ggplot(
   risk_diff_plot_df,
   aes(
     x = risk_diff,
-    y = factor(tm_day, levels = rev(tm_start_days), labels = rev(paste("TM day", tm_start_days)))
+    y = factor(strategy_label, levels = rev(strategy_label))
   )
 ) +
   geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.5) +
@@ -108,7 +116,7 @@ p_risk_diff <- ggplot(
   ) +
   geom_point(size = 2.5) +
   labs(
-    x = "Risk Difference (vs no TM)",
+    x = "Risk Difference (vs no rTM)",
     y = NULL,
     title = paste0("Risk Difference at Day ", plot_day, " (", sg, ")")
   ) +

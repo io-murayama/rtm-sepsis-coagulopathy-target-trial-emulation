@@ -164,12 +164,14 @@ Optional environment variables:
 DATE=260822 N_ITER=500 SG=all bash scripts/run_analysis.sh
 DATE=260822 N_ITER=25 SGS=all,sofa_10_or_higher bash scripts/run_analysis.sh
 VISUALIZE=0 DATE=260822 N_ITER=25 SG=all bash scripts/run_analysis.sh
+COV_INV=1 DATE=260822 N_ITER=25 SG=all bash scripts/run_analysis.sh
 ```
 
 - `DATE`: YYMMDD prefix matching the preprocessed data (default: `260822`)
 - `N_ITER`: number of bootstrap iterations (default: `500`)
 - `SG` / `SGS`: subgroup name, or comma-separated list (default: `all`)
 - `VISUALIZE`: set to `0` to skip figure scripts `03`, `04`, and `09` (default: `1`)
+- `COV_INV`: set to `1` to reverse the within-time **covariate (L)** modeling order while keeping TM/AT last (`--cov-inv`; default: forward)
 
 You can also call the scripts directly, for example:
 
@@ -179,9 +181,12 @@ Rscript scripts/03_fig_gformula_mortality.R --date 260822 --sg all
 Rscript scripts/04_fig_risk_difference.R --date 260822 --sg all
 Rscript scripts/02_gformula.R --sg all --single --date 260822
 Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
+# Sensitivity: reverse L covariate order (TM/AT remain last)
+Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 500 --cov-inv
+Rscript scripts/02_gformula.R --sg all --single --date 260822 --cov-inv
 ```
 
-Results are written to `output/` (logs under `output/logs/`).
+Results are written to `output/` (logs under `output/logs/`). Filenames include `fwd` or `inv` for the covariate order (for example `260822_gformula_ci_24hr_fwd_all.RData`).
 
 ### Natural course vs observed mortality (point estimate)
 
@@ -192,7 +197,7 @@ Rscript scripts/02_gformula.R --sg all --single --date 260822
 Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
 ```
 
-This writes `output/<date>_natural_course_vs_observed_mortality_24hr_all.png` (and a CSV of the plotted curves). No confidence band is drawn. Script `09` is for the full cohort only (no `--sg`).
+This writes `output/<date>_natural_course_vs_observed_mortality_24hr_fwd_all.png` (and a CSV of the plotted curves). No confidence band is drawn. Script `09` is for the full cohort only (no `--sg`).
 
 ### Descriptive tables and figures
 

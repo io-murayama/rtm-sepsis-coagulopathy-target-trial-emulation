@@ -9,9 +9,11 @@ library(tibble)
 # Usage:
 #   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822
 #   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822 --day 28
+#   Rscript scripts/04_fig_risk_difference.R --sg all --date 260822 --cov-inv
 output_dir <- "./output/"
 plot_day <- 28L
 dpi_out <- 600
+tw_hr <- 24L
 
 args <- commandArgs(trailingOnly = TRUE)
 flag_value <- function(args, flag, default = NULL) {
@@ -26,6 +28,9 @@ outdir <- flag_value(args, "--outdir", output_dir)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 plot_day <- suppressWarnings(as.integer(flag_value(args, "--day", as.character(plot_day))))
 if (is.na(plot_day)) stop("--day must be an integer.")
+tw_hr <- suppressWarnings(as.integer(flag_value(args, "--tw", as.character(tw_hr))))
+if (is.na(tw_hr) || tw_hr < 1L) stop("--tw must be a positive integer.")
+cov_order_label <- if ("--cov-inv" %in% args) "inv" else "fwd"
 
 font_family <- "sans"
 if (requireNamespace("systemfonts", quietly = TRUE)) {
@@ -33,7 +38,10 @@ if (requireNamespace("systemfonts", quietly = TRUE)) {
   if ("Arial" %in% fonts) font_family <- "Arial"
 }
 
-rdata_file <- file.path(output_dir, paste0(date, "_gformula_ci_24hr_", sg, ".RData"))
+rdata_file <- file.path(
+  output_dir,
+  paste0(date, "_gformula_ci_", tw_hr, "hr_", cov_order_label, "_", sg, ".RData")
+)
 if (!file.exists(rdata_file)) {
   stop("RData file not found: ", rdata_file)
 }
@@ -136,7 +144,7 @@ tryCatch(print(p_risk_diff), error = function(e) {
 
 f_risk_diff <- file.path(
   outdir,
-  sprintf("%s_g_risk_diff_%shr_%s.png", date, time_window_width, sg)
+  sprintf("%s_g_risk_diff_%shr_%s_%s.png", date, time_window_width, cov_order_label, sg)
 )
 
 ggsave(

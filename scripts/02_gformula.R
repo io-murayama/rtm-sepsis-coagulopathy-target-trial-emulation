@@ -58,6 +58,7 @@ subgroup_filters <- rlang::quos(
 # Usage:
 #   Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 25
 #   Rscript scripts/02_gformula.R --sg all --single
+#   Rscript scripts/02_gformula.R --sg all --single --cov-inv   # reverse L order; TM/AT stay last
 args          <- commandArgs(trailingOnly = TRUE)
 flag_value <- function(args, flag, default = NULL) {
   idx <- which(args == flag)
@@ -66,6 +67,8 @@ flag_value <- function(args, flag, default = NULL) {
 }
 sg_idx        <- which(args == "--sg")
 run_single    <- "--single" %in% args || "--no-bootstrap" %in% args
+use_cov_inv   <- "--cov-inv" %in% args
+cov_order_label <- if (use_cov_inv) "inv" else "fwd"
 
 date <- flag_value(args, "--date", "260822")
 if (!grepl("^[0-9]{6}$", date)) stop("--date must use YYMMDD format.")
@@ -99,13 +102,18 @@ if (!isTRUE(getOption("gformula.source_only", FALSE))) {
 tm_start_days <- c(1:2)
 
 message(sprintf(
-  "[CLI] date=%s | subgroup=%s | mode=%s | n_iter=%s",
+  "[CLI] date=%s | subgroup=%s | mode=%s | n_iter=%s | cov=%s",
   date,
   chosen_sg,
   if (run_single) "single (no bootstrap)" else "bootstrap",
-  if (run_single) "NA" else as.character(n_iter)
+  if (run_single) "NA" else as.character(n_iter),
+  cov_order_label
 ))
 
+gformula_rdata_stem <- function(kind, date, time_window_width, cov_order_label, sg) {
+  # kind: "ci" or "pe"
+  paste0(date, "_gformula_", kind, "_", time_window_width, "hr_", cov_order_label, "_", sg)
+}
 
 #========================================#
 # 0. parallel planning                   #
@@ -682,8 +690,21 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
     "charlson_comorbidity_index", "apache2_score"
   )
   
-  covnames <- GFORMULA_COVNAMES
+  covnames_fwd <- GFORMULA_COVNAMES
+  treatment_covs <- c("thrombomodulin_use", "antithrombin_use")
+  l_covnames_fwd <- setdiff(covnames_fwd, treatment_covs)
+  # --cov-inv: reverse L only; keep A (TM/AT) last
+  covnames <- if (isTRUE(use_cov_inv)) {
+    c(rev(l_covnames_fwd), treatment_covs)
+  } else {
+    covnames_fwd
+  }
   covtypes <- unname(GFORMULA_COVTYPES[covnames])
+  message(sprintf(
+    "[run_gformula_simulation] cov order (%s): %s",
+    cov_order_label,
+    paste(covnames, collapse = " -> ")
+  ))
   
   # Y model
   y_static_vars <- c(
@@ -772,64 +793,27 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
 
   l_other <- c(l_base_vars, l_other_rtm)
 
-  cov_formula_vars <- list(
-    bt = l_other,
-    hr = c(l_other, "bt"),
-    rr = c(l_other, "bt", "hr"),
-    mbp = c(l_other, "bt", "hr", "rr"),
-    spo2 = c(l_other, "bt", "hr", "rr", "mbp"),
-    lactate = c(l_other, "bt", "hr", "rr", "mbp", "spo2"),
-    pt_inr = c(
-      l_base_vars, l_e6_coag_pt_inr,
-      "bt", "hr", "rr", "mbp", "spo2", "lactate"
-    ),
-    platelet = c(
-      l_base_vars, l_e6_coag_platelet,
-      "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr"
-    ),
-    sofa_score = c(
-      l_base_vars, l_e6_sofa,
-      "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet"
-    ),
-    noradrenaline_equivalent_dose = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet", "sofa_score"
-    ),
-    mechanical_ventilation_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose"
-    ),
-    renal_replacement_therapy_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use"
-    ),
-    heparin_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use",
-      "renal_replacement_therapy_use"
-    ),
-    rbc_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use",
-      "renal_replacement_therapy_use", "heparin_use"
-    ),
-    ffp_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use",
-      "renal_replacement_therapy_use", "heparin_use", "rbc_use"
-    ),
-    pc_use = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use",
-      "renal_replacement_therapy_use", "heparin_use", "rbc_use", "ffp_use"
-    ),
-    adverse_event = c(
-      l_other, "bt", "hr", "rr", "mbp", "spo2", "lactate", "pt_inr", "platelet",
-      "sofa_score", "noradrenaline_equivalent_dose", "mechanical_ventilation_use",
-      "renal_replacement_therapy_use", "heparin_use", "rbc_use", "ffp_use", "pc_use"
-    ),
-    thrombomodulin_use = a_all_vars,
-    antithrombin_use = a_all_vars
-  )
+  # Contemporaneous predictors follow simulation order (fwd or inv).
+  build_cov_formula_vars <- function(ord) {
+    out <- list()
+    seen <- character(0)
+    for (v in ord) {
+      if (v %in% treatment_covs) {
+        out[[v]] <- a_all_vars
+      } else if (identical(v, "pt_inr")) {
+        out[[v]] <- c(l_base_vars, l_e6_coag_pt_inr, seen)
+      } else if (identical(v, "platelet")) {
+        out[[v]] <- c(l_base_vars, l_e6_coag_platelet, seen)
+      } else if (identical(v, "sofa_score")) {
+        out[[v]] <- c(l_base_vars, l_e6_sofa, seen)
+      } else {
+        out[[v]] <- c(l_other, seen)
+      }
+      seen <- c(seen, v)
+    }
+    out
+  }
+  cov_formula_vars <- build_cov_formula_vars(covnames)
 
   cov_formulas <- lapply(names(cov_formula_vars), function(var){
     rhs <- paste(cov_formula_vars[[var]], collapse = " + ")
@@ -1603,12 +1587,16 @@ get_gformula_ci_single_sg <- function(
   results[["n_success"]]                               <- n_success   
   
   # 結果をRDataで保存
-  rdata_file <- file.path(output_dir, paste0(date, "_gformula_ci_", time_window_width, "hr_", chosen_sg, ".RData"))
+  rdata_file <- file.path(
+    output_dir,
+    paste0(gformula_rdata_stem("ci", date, time_window_width, cov_order_label, chosen_sg), ".RData")
+  )
   save(
     list     = c("results", "followup_length",
                  "time_window_width", "n_iter", "n_success", "size", "chosen_sg",
                  "int_descript", "all_strategies", "NATURAL_COURSE_NAME",
-                 "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS"),
+                 "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS",
+                 "cov_order_label", "use_cov_inv"),
     file     = rdata_file
   )
   message("[get_gformula_ci_single_sg] Results saved for subgroup: ",
@@ -1632,8 +1620,8 @@ get_gformula_point_estimate_single_sg <- function(
   }
 
   message(sprintf(
-    "[get_gformula_point_estimate_single_sg] sg=%s | single run (no bootstrap)",
-    chosen_sg
+    "[get_gformula_point_estimate_single_sg] sg=%s | cov=%s | single run (no bootstrap)",
+    chosen_sg, cov_order_label
   ))
 
   piece <- run_one_iter_for_one_sg(
@@ -1663,13 +1651,14 @@ get_gformula_point_estimate_single_sg <- function(
   n_success <- 1L
   rdata_file <- file.path(
     output_dir,
-    paste0(date, "_gformula_pe_", time_window_width, "hr_", chosen_sg, ".RData")
+    paste0(gformula_rdata_stem("pe", date, time_window_width, cov_order_label, chosen_sg), ".RData")
   )
   save(
     list = c(
       "results", "followup_length", "time_window_width", "n_iter", "n_success",
       "size", "chosen_sg", "int_descript", "all_strategies", "NATURAL_COURSE_NAME",
-      "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS"
+      "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS",
+      "cov_order_label", "use_cov_inv"
     ),
     file = rdata_file
   )

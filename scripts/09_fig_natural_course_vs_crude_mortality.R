@@ -10,12 +10,14 @@ library(ggplot2)
 # Usage:
 #   Rscript scripts/02_gformula.R --sg all --single --date 260822
 #   Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
+#   Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822 --cov-inv
 #
 # Optional:
 #   --stage combined|first|second   (default: combined)
 #   --tw 24
 #   --outdir ./output
 #   --allow-ci   fall back to _gformula_ci_*.RData if point-estimate file is missing
+#   --cov-inv    use inverted covariate modeling order results
 data_dir   <- "./data"
 output_dir <- "./output"
 sg         <- "all"
@@ -53,6 +55,7 @@ tw_hr <- suppressWarnings(as.integer(flag_value(
 )))
 if (is.na(tw_hr) || tw_hr < 1L) stop("--tw must be a positive integer.")
 allow_ci <- "--allow-ci" %in% args
+cov_order_label <- if ("--cov-inv" %in% args) "inv" else "fwd"
 
 font_family <- "sans"
 if (requireNamespace("systemfonts", quietly = TRUE)) {
@@ -63,8 +66,14 @@ if (requireNamespace("systemfonts", quietly = TRUE)) {
 #========================================#
 # 1. Load Natural course from g-formula  #
 #========================================#
-pe_file <- file.path(output_dir, paste0(date, "_gformula_pe_", tw_hr, "hr_", sg, ".RData"))
-ci_file <- file.path(output_dir, paste0(date, "_gformula_ci_", tw_hr, "hr_", sg, ".RData"))
+pe_file <- file.path(
+  output_dir,
+  paste0(date, "_gformula_pe_", tw_hr, "hr_", cov_order_label, "_", sg, ".RData")
+)
+ci_file <- file.path(
+  output_dir,
+  paste0(date, "_gformula_ci_", tw_hr, "hr_", cov_order_label, "_", sg, ".RData")
+)
 
 rdata_file <- pe_file
 source_label <- "point estimate (--single)"
@@ -77,7 +86,8 @@ if (!file.exists(pe_file)) {
     stop(
       "Point-estimate RData not found: ", pe_file, "\n",
       "Run first:\n",
-      "  Rscript scripts/02_gformula.R --sg all --single --date ", date, "\n",
+      "  Rscript scripts/02_gformula.R --sg all --single --date ", date,
+      if (identical(cov_order_label, "inv")) " --cov-inv" else "", "\n",
       "Or pass --allow-ci to fall back to ", ci_file
     )
   }
@@ -227,11 +237,17 @@ p <- ggplot2::ggplot(
 
 f_plot <- file.path(
   outdir,
-  sprintf("%s_natural_course_vs_observed_mortality_%shr_%s.png", date, time_window_width, sg)
+  sprintf(
+    "%s_natural_course_vs_observed_mortality_%shr_%s_%s.png",
+    date, time_window_width, cov_order_label, sg
+  )
 )
 f_csv <- file.path(
   outdir,
-  sprintf("%s_natural_course_vs_observed_mortality_%shr_%s.csv", date, time_window_width, sg)
+  sprintf(
+    "%s_natural_course_vs_observed_mortality_%shr_%s_%s.csv",
+    date, time_window_width, cov_order_label, sg
+  )
 )
 
 ggplot2::ggsave(f_plot, p, width = 8, height = 6, dpi = dpi_out)

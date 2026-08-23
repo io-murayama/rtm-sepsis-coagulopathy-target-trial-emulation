@@ -10,6 +10,7 @@ library(ggplot2)
 #   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822
 #   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822 --stages first,second,combined
 #   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822 --tw 24
+#   Rscript scripts/03_fig_gformula_mortality.R --sg all --date 260822 --cov-inv
 output_dir <- "./output/"
 ylim <- 0.40
 y_breaks_by <- 0.10
@@ -43,6 +44,7 @@ if (length(unknown_stages)) {
 }
 tw_hr <- suppressWarnings(as.integer(flag_value(args, "--tw", as.character(tw_hr))))
 if (is.na(tw_hr) || tw_hr < 1L) stop("--tw must be a positive integer.")
+cov_order_label <- if ("--cov-inv" %in% args) "inv" else "fwd"
 
 strategy_colors <- c(
   TM_day1_surv_mean = "#084594",
@@ -69,7 +71,7 @@ if (requireNamespace("systemfonts", quietly = TRUE)) {
 
 rdata_file <- file.path(
   output_dir,
-  paste0(date, "_gformula_ci_", tw_hr, "hr_", sg, ".RData")
+  paste0(date, "_gformula_ci_", tw_hr, "hr_", cov_order_label, "_", sg, ".RData")
 )
 if (!file.exists(rdata_file)) {
   stop("RData file not found: ", rdata_file)
@@ -167,7 +169,7 @@ for (stage in stages) {
 
   out_file <- file.path(
     outdir,
-    sprintf("%s_g_surv_%s_%shr_%s.png", date, stage, time_window_width, sg)
+    sprintf("%s_g_surv_%s_%shr_%s_%s.png", date, stage, time_window_width, cov_order_label, sg)
   )
   ggsave(
     filename = out_file,

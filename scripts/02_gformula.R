@@ -317,7 +317,6 @@ get_gformula_pooled_model <- function(df, followup_length, time_window_width){
 # 3. g‐formula simulation                #
 #    ICU内シミュレーション               #
 #========================================#
-# Y: A + ever_A + ever×days_since_first; L: E6 (=lag1..6 of A) + coag×E6
 history_ever_days_since <- function(pool, histvars, time_name, t, id_name) {
   if (!data.table::is.data.table(pool)) {
     stop("history_ever_days_since expects a data.table pool")
@@ -363,7 +362,6 @@ history_ever_days_since <- function(pool, histvars, time_name, t, id_name) {
   invisible(NULL)
 }
 
-# E6_t = A_{t-1}+...+A_{t-6}（同時点の A_t は含めない）
 e6_thrombomodulin_use <- paste0(
   "I(",
   paste(sprintf("lag%d_thrombomodulin_use", 1:6), collapse = " + "),
@@ -494,43 +492,6 @@ GFORMULA_COV_TRANSFORMS <- c(
   antithrombin_use = "identity"
 )
 stopifnot(all(GFORMULA_COVNAMES %in% names(GFORMULA_COV_TRANSFORMS)))
-
-GFORMULA_BINARY_COVNAMES <- GFORMULA_COVNAMES[GFORMULA_COVTYPES == "binary"]
-GFORMULA_CONTINUOUS_COVNAMES <- setdiff(GFORMULA_COVNAMES, GFORMULA_BINARY_COVNAMES)
-GFORMULA_COVARIATE_LABELS <- c(
-  bt = "Body temperature",
-  hr = "Heart rate",
-  rr = "Respiratory rate",
-  mbp = "Mean blood pressure",
-  spo2 = "SpO2",
-  lactate = "Lactate",
-  pt_inr = "PT-INR",
-  platelet = "Platelet count",
-  sofa_score = "SOFA score",
-  noradrenaline_equivalent_dose = "Noradrenaline equivalent dose",
-  mechanical_ventilation_use = "Mechanical ventilation",
-  renal_replacement_therapy_use = "Renal replacement therapy",
-  heparin_use = "Heparin",
-  rbc_use = "RBC transfusion",
-  ffp_use = "FFP transfusion",
-  pc_use = "Platelet transfusion",
-  adverse_event = "Adverse event",
-  thrombomodulin_use = "Thrombomodulin",
-  antithrombin_use = "Antithrombin"
-)
-GFORMULA_COVARIATE_PLOT_GROUPS <- list(
-  vitals = c("bt", "hr", "rr", "mbp", "spo2"),
-  labs = c("lactate", "pt_inr", "platelet", "sofa_score"),
-  support = c(
-    "noradrenaline_equivalent_dose",
-    "mechanical_ventilation_use",
-    "renal_replacement_therapy_use"
-  ),
-  treatments = c(
-    "heparin_use", "rbc_use", "ffp_use", "pc_use",
-    "thrombomodulin_use", "antithrombin_use", "adverse_event"
-  )
-)
 
 # truncnorm fit（modeling scale）
 fit_cov_truncnorm_2sided <- function(covparams, covname, obs_data, j) {
@@ -779,7 +740,7 @@ run_gformula_simulation <- function(df_boot, interventions, n_simul_min,
   l_time_vars <- c("time_window_index", "I(time_window_index^2)")
   l_base_vars <- c(l_static_vars, l_cov_lagged_vars, l_time_vars)
 
-  # L の rTM: 多くは lag1、凝固系/SOFA は E6（+線形交互作用）
+  # L の rTM: lag1、凝固系/SOFA は E6（+線形交互作用）
   l_other_rtm <- "lag1_thrombomodulin_use"
   l_e6_coag_platelet <- c(
     e6_thrombomodulin_use,
@@ -979,150 +940,7 @@ get_discharge_model <- function(df) {
   return(discharge_model)
 }
 
-icu_day_from_time_window <- function(time_window_index, time_window_width) {
-  (time_window_index + 1) * time_window_width / 24
-}
-
-filter_at_risk_simulation_rows <- function(df) {
-  df %>%
-    group_by(icu_stay_id) %>%
-    arrange(time_window_index, .by_group = TRUE) %>%
-    mutate(
-      prior_death = lag(cumsum(icu_death == 1), default = 0) > 0,
-      prior_dis   = lag(cumsum(icu_discharge_alive == 1), default = 0) > 0
-    ) %>%
-    ungroup() %>%
-    filter(!prior_death & !prior_dis)
-}
-
-filter_at_risk_death_only_rows <- function(df) {
-  df %>%
-    group_by(icu_stay_id) %>%
-    arrange(time_window_index, .by_group = TRUE) %>%
-    mutate(prior_death = lag(cumsum(icu_death == 1), default = 0) > 0) %>%
-    ungroup() %>%
-    filter(!prior_death)
-}
-
-summarize_covariate_trajectories_long <- function(
-    df,
-    strategy,
-    trajectory_source,
-    time_window_width,
-    covariates = GFORMULA_COVNAMES
-) {
-  covariates <- intersect(covariates, names(df))
-  if (length(covariates) == 0L) {
-    stop("[summarize_covariate_trajectories_long] No covariate columns found in df.")
-  }
-
-  wide <- df %>%
-    mutate(icu_day = icu_day_from_time_window(time_window_index, time_window_width)) %>%
-    group_by(icu_day) %>%
-    summarise(
-      n_at_risk = n(),
-      across(all_of(covariates), ~ mean(.x, na.rm = TRUE)),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      strategy = strategy,
-      trajectory_source = trajectory_source
-    )
-
-  wide %>%
-    pivot_longer(
-      all_of(covariates),
-      names_to = "covariate",
-      values_to = "value"
-    ) %>%
-    mutate(
-      covariate_type = if_else(
-        covariate %in% GFORMULA_BINARY_COVNAMES,
-        "binary",
-        "continuous"
-      ),
-      covariate_label = unname(GFORMULA_COVARIATE_LABELS[covariate])
-    )
-}
-
-extract_strategy_covariate_trajectories <- function(
-    g_results_sims,
-    sims1_at_risk = NULL,
-    sims1_at_risk_discharge = NULL,
-    strategies = all_strategies,
-    time_window_width,
-    trajectory_sources = "at_risk_discharge"
-) {
-  trajectory_sources <- match.arg(
-    trajectory_sources,
-    c("l_only", "at_risk", "at_risk_discharge"),
-    several.ok = TRUE
-  )
-  missing_strategies <- setdiff(strategies, names(g_results_sims))
-  if (length(missing_strategies) > 0L) {
-    stop(
-      "Missing strategies in g_results$sims: ",
-      paste(missing_strategies, collapse = ", ")
-    )
-  }
-
-  pieces <- list()
-  for (nm in strategies) {
-    if ("l_only" %in% trajectory_sources) {
-      sim_l <- g_results_sims[[nm]] %>%
-        as_tibble() %>%
-        mutate(
-          icu_death = 0L,
-          icu_discharge_alive = 0L
-        )
-      pieces[[paste0(nm, "__l_only")]] <- summarize_covariate_trajectories_long(
-        sim_l,
-        strategy = nm,
-        trajectory_source = "l_only",
-        time_window_width = time_window_width
-      )
-    }
-
-    if ("at_risk" %in% trajectory_sources) {
-      if (is.null(sims1_at_risk) || !nm %in% names(sims1_at_risk)) {
-        stop("at_risk trajectories requested but sims1_at_risk is missing strategy: ", nm)
-      }
-      sim_ar <- sims1_at_risk[[nm]] %>%
-        as_tibble() %>%
-        filter_at_risk_death_only_rows()
-      pieces[[paste0(nm, "__at_risk")]] <- summarize_covariate_trajectories_long(
-        sim_ar,
-        strategy = nm,
-        trajectory_source = "at_risk",
-        time_window_width = time_window_width
-      )
-    }
-
-    if ("at_risk_discharge" %in% trajectory_sources) {
-      if (is.null(sims1_at_risk_discharge) || !nm %in% names(sims1_at_risk_discharge)) {
-        stop(
-          "at_risk_discharge trajectories requested but sims1_at_risk_discharge is missing strategy: ",
-          nm
-        )
-      }
-      sim_ar_dis <- sims1_at_risk_discharge[[nm]] %>%
-        as_tibble() %>%
-        filter_at_risk_simulation_rows()
-      pieces[[paste0(nm, "__at_risk_discharge")]] <- summarize_covariate_trajectories_long(
-        sim_ar_dis,
-        strategy = nm,
-        trajectory_source = "at_risk_discharge",
-        time_window_width = time_window_width
-      )
-    }
-  }
-
-  bind_rows(pieces)
-}
-
-process_first_simulation <- function(g_results, 
-                                     discharge_model, 
-                                     return_all_time_points = FALSE) { # sub figure用のsimulationではTRUEにして全time pointを取り出す
+process_first_simulation <- function(g_results, discharge_model) {
   sim_icu_death_and_icu_discharge <- list()
   sim_icu_death_only              <- list() # ICU内simulationだけのsurvival curveを得るための処理
   
@@ -1169,13 +987,6 @@ process_first_simulation <- function(g_results,
       select(-event_flag)
     
     rm(dt_sim); gc()
-    
-    if (return_all_time_points) {
-      # sub figure用のsimulationでは全time pointを取り出す
-      sim_icu_death_and_icu_discharge[[nm]] <- dt_sim_icu_death_and_icu_discharge
-      sim_icu_death_only[[nm]]              <- dt_sim_icu_death_only
-      next
-    }
     
     # secondary endpoint解析に必要な累積変数を残して最後のtime windowだけ取り出す
     dt_sim_icu_death_and_icu_discharge <- extract_last_time_window(dt_sim_icu_death_and_icu_discharge, cum = TRUE)
@@ -1429,8 +1240,7 @@ summarize_secondary_endpoints <- function(sim_results) {
 run_one_iter_for_one_sg <- function(df_filtered, sg_ids, i,
                                     interventions, followup_length, 
                                     time_window_width, n_simul_min,
-                                    use_bootstrap = TRUE,
-                                    save_trajectories = TRUE){
+                                    use_bootstrap = TRUE){
   # worker内での処理を1スレッドに制限
   try({
     RhpcBLASctl::blas_set_num_threads(1)
@@ -1451,43 +1261,13 @@ run_one_iter_for_one_sg <- function(df_filtered, sg_ids, i,
   g_pool_model <- get_gformula_pooled_model(df_boot, followup_length, time_window_width)
   
   # 3. ICU内シミュレーション
-  #    trajectory保存時は全time pointを残し、at_risk_dischargeで要約してから
-  #    生存解析用に最終time windowへ圧縮する（死亡/退室の乱数を共有するため1回だけ実行）
   g_results       <- run_gformula_simulation(
     df_boot, interventions, n_simul_min,
     followup_length, time_window_width,
     seed = 813L + as.integer(i)
   )
   discharge_model <- get_discharge_model(df_boot)
-
-  covariate_trajectories <- NULL
-  if (isTRUE(save_trajectories)) {
-    sims1_full <- process_first_simulation(
-      g_results,
-      discharge_model,
-      return_all_time_points = TRUE
-    )
-    covariate_trajectories <- extract_strategy_covariate_trajectories(
-      g_results_sims = g_results$sims,
-      sims1_at_risk_discharge = sims1_full$sim_icu_death_and_icu_discharge,
-      strategies = all_strategies,
-      time_window_width = time_window_width,
-      trajectory_sources = "at_risk_discharge"
-    )
-    sims1 <- list(
-      sim_icu_death_and_icu_discharge = lapply(
-        sims1_full$sim_icu_death_and_icu_discharge,
-        function(d) extract_last_time_window(d, cum = TRUE)
-      ),
-      sim_icu_death_only = lapply(
-        sims1_full$sim_icu_death_only,
-        function(d) extract_last_time_window(d, cum = TRUE)
-      )
-    )
-    rm(sims1_full); gc()
-  } else {
-    sims1 <- process_first_simulation(g_results, discharge_model)
-  }
+  sims1           <- process_first_simulation(g_results, discharge_model)
   
   # 4. ICU退室後シミュレーション
   sims2           <- build_second_stage_individuals(sims1$sim_icu_death_and_icu_discharge, 
@@ -1526,8 +1306,7 @@ run_one_iter_for_one_sg <- function(df_filtered, sg_ids, i,
     first = surv_first,
     second = surv_second,
     combined = surv_comb,
-    secondary_endpoints = secondary_endpoints,
-    covariate_trajectories = covariate_trajectories
+    secondary_endpoints = secondary_endpoints
   )
 }
 
@@ -1564,18 +1343,6 @@ format_point_estimate_survival <- function(
   }
 
   out %>% select(-all_of(strategies))
-}
-
-average_covariate_trajectories <- function(traj_list) {
-  traj_list <- Filter(Negate(is.null), traj_list)
-  if (length(traj_list) == 0L) return(NULL)
-  bind_rows(traj_list) %>%
-    group_by(strategy, trajectory_source, covariate, covariate_type, covariate_label, icu_day) %>%
-    summarise(
-      value = mean(value, na.rm = TRUE),
-      n_at_risk = mean(n_at_risk, na.rm = TRUE),
-      .groups = "drop"
-    )
 }
 
 calculate_confidence_intervals_survival <- function(
@@ -1811,9 +1578,6 @@ get_gformula_ci_single_sg <- function(
           mutate(boot_iter = i)
       })
     )
-  covariate_trajectories <- average_covariate_trajectories(
-    lapply(pieces_valid, `[[`, "covariate_trajectories")
-  )
   rm(pieces, pieces_valid); gc()
   
   g_surv_data_1     <- calculate_confidence_intervals_survival(
@@ -1836,7 +1600,6 @@ get_gformula_ci_single_sg <- function(
   results[[paste0("combined_", chosen_sg)]]            <- tibble(g_surv_data_c)
   results[[paste0("secondary_endpoints_", chosen_sg)]] <- g_surv_data_se$summary_by_strategy
   results[[paste0("secondary_endpoint_diffs_", chosen_sg)]] <- g_surv_data_se$diff_vs_control
-  results[[paste0("covariate_trajectories_", chosen_sg)]] <- covariate_trajectories
   results[["n_success"]]                               <- n_success   
   
   # 結果をRDataで保存
@@ -1845,23 +1608,11 @@ get_gformula_ci_single_sg <- function(
     list     = c("results", "followup_length",
                  "time_window_width", "n_iter", "n_success", "size", "chosen_sg",
                  "int_descript", "all_strategies", "NATURAL_COURSE_NAME",
-                 "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS",
-                 "GFORMULA_BINARY_COVNAMES",
-                 "GFORMULA_CONTINUOUS_COVNAMES", "GFORMULA_COVARIATE_LABELS",
-                 "GFORMULA_COVARIATE_PLOT_GROUPS"),
+                 "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS"),
     file     = rdata_file
   )
   message("[get_gformula_ci_single_sg] Results saved for subgroup: ",
           chosen_sg, " -> ", rdata_file)
-
-  if (!is.null(covariate_trajectories)) {
-    traj_csv <- file.path(
-      output_dir,
-      paste0(date, "_covariate_trajectories_", time_window_width, "hr_", chosen_sg, ".csv")
-    )
-    write.csv(covariate_trajectories, traj_csv, row.names = FALSE)
-    message("[get_gformula_ci_single_sg] Trajectory CSV: ", traj_csv)
-  }
   
   return(results)
 }
@@ -1871,7 +1622,6 @@ get_gformula_point_estimate_single_sg <- function(
     followup_length, time_window_width,
     n_simul_min, size = NULL
 ) {
-  # bootstrapなし・1回のpoint estimate（Natural course含む）+ L trajectory
   if (!is.null(size)) {
     sampled_ids <- df_filtered %>%
       distinct(icu_stay_id) %>%
@@ -1894,8 +1644,7 @@ get_gformula_point_estimate_single_sg <- function(
     followup_length = followup_length,
     time_window_width = time_window_width,
     n_simul_min = n_simul_min,
-    use_bootstrap = FALSE,
-    save_trajectories = TRUE
+    use_bootstrap = FALSE
   )
 
   g_surv_data_1 <- format_point_estimate_survival(piece$first, all_strategies)
@@ -1907,7 +1656,6 @@ get_gformula_point_estimate_single_sg <- function(
   results[[paste0("second_", chosen_sg)]] <- tibble(g_surv_data_2)
   results[[paste0("combined_", chosen_sg)]] <- tibble(g_surv_data_c)
   results[[paste0("secondary_endpoints_", chosen_sg)]] <- piece$secondary_endpoints
-  results[[paste0("covariate_trajectories_", chosen_sg)]] <- piece$covariate_trajectories
   results[["n_success"]] <- 1L
   results[["estimation_mode"]] <- "point_estimate"
 
@@ -1921,10 +1669,7 @@ get_gformula_point_estimate_single_sg <- function(
     list = c(
       "results", "followup_length", "time_window_width", "n_iter", "n_success",
       "size", "chosen_sg", "int_descript", "all_strategies", "NATURAL_COURSE_NAME",
-      "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS",
-      "GFORMULA_BINARY_COVNAMES",
-      "GFORMULA_CONTINUOUS_COVNAMES", "GFORMULA_COVARIATE_LABELS",
-      "GFORMULA_COVARIATE_PLOT_GROUPS"
+      "GFORMULA_COVNAMES", "GFORMULA_COVTYPES", "GFORMULA_COV_TRANSFORMS"
     ),
     file = rdata_file
   )
@@ -1932,16 +1677,6 @@ get_gformula_point_estimate_single_sg <- function(
     "[get_gformula_point_estimate_single_sg] Results saved for subgroup: ",
     chosen_sg, " -> ", rdata_file
   )
-
-  # trajectory CSVも併せて保存（11で使いやすいように）
-  if (!is.null(piece$covariate_trajectories)) {
-    traj_csv <- file.path(
-      output_dir,
-      paste0(date, "_covariate_trajectories_", time_window_width, "hr_", chosen_sg, ".csv")
-    )
-    write.csv(piece$covariate_trajectories, traj_csv, row.names = FALSE)
-    message("[get_gformula_point_estimate_single_sg] Trajectory CSV: ", traj_csv)
-  }
 
   return(results)
 }
@@ -1968,7 +1703,6 @@ if (!isTRUE(getOption("gformula.source_only", FALSE))) {
   rm(df); gc()
 
   if (isTRUE(run_single)) {
-    # bootstrapなし・1回のpoint estimate（Natural course + L trajectory）
     get_gformula_point_estimate_single_sg(
       df_filtered       = df_filtered,
       interventions     = interventions,

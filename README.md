@@ -95,6 +95,7 @@ rtm-sepsis-coagulopathy-target-trial-emulation
     ├── 06_fig_crude_mortality.R
     ├── 07_fig_rtm_treatment_history.R
     ├── 08_table_missingness.R
+    ├── 09_fig_natural_course_vs_crude_mortality.R
     └── run_analysis.sh
 ```
 
@@ -179,6 +180,17 @@ Rscript scripts/04_fig_risk_difference.R --date 260822 --sg all
 ```
 
 Results are written to `output/` (logs under `output/logs/`).
+
+### Natural course vs observed mortality (point estimate)
+
+For a calibration figure comparing the g-formula natural course with crude all-cause mortality in the full cohort (`all`), first run a bootstrap-free point estimate, then the figure script:
+
+```
+Rscript scripts/02_gformula.R --sg all --single --date 260822
+Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822 --sg all
+```
+
+This writes `output/<date>_natural_course_vs_observed_mortality_24hr_all.png` (and a CSV of the plotted curves). No confidence band is drawn.
 
 ### Descriptive tables and figures
 

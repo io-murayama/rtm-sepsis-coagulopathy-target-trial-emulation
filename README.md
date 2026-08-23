@@ -152,7 +152,7 @@ This writes `data/df_260822_all.RData` used by the downstream scripts. Adjust th
 
 ### Run the main analysis (g-formula)
 
-The main pipeline estimates per-protocol effects with bootstrap confidence intervals and builds the primary figures:
+The main pipeline estimates per-protocol effects with bootstrap confidence intervals, a full-cohort point estimate (natural course), and builds the primary figures:
 
 ```
 bash scripts/run_analysis.sh
@@ -169,7 +169,7 @@ VISUALIZE=0 DATE=260822 N_ITER=25 SG=all bash scripts/run_analysis.sh
 - `DATE`: YYMMDD prefix matching the preprocessed data (default: `260822`)
 - `N_ITER`: number of bootstrap iterations (default: `500`)
 - `SG` / `SGS`: subgroup name, or comma-separated list (default: `all`)
-- `VISUALIZE`: set to `0` to skip figure scripts `03` and `04` (default: `1`)
+- `VISUALIZE`: set to `0` to skip figure scripts `03`, `04`, and `09` (default: `1`)
 
 You can also call the scripts directly, for example:
 
@@ -177,20 +177,22 @@ You can also call the scripts directly, for example:
 Rscript scripts/02_gformula.R --sg all --date 260822 --n-iter 500
 Rscript scripts/03_fig_gformula_mortality.R --date 260822 --sg all
 Rscript scripts/04_fig_risk_difference.R --date 260822 --sg all
+Rscript scripts/02_gformula.R --sg all --single --date 260822
+Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
 ```
 
 Results are written to `output/` (logs under `output/logs/`).
 
 ### Natural course vs observed mortality (point estimate)
 
-For a calibration figure comparing the g-formula natural course with crude all-cause mortality in the full cohort (`all`), first run a bootstrap-free point estimate, then the figure script:
+`run_analysis.sh` already runs the full-cohort `--single` point estimate and, when `VISUALIZE=1`, script `09`. To run that step alone:
 
 ```
 Rscript scripts/02_gformula.R --sg all --single --date 260822
-Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822 --sg all
+Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
 ```
 
-This writes `output/<date>_natural_course_vs_observed_mortality_24hr_all.png` (and a CSV of the plotted curves). No confidence band is drawn.
+This writes `output/<date>_natural_course_vs_observed_mortality_24hr_all.png` (and a CSV of the plotted curves). No confidence band is drawn. Script `09` is for the full cohort only (no `--sg`).
 
 ### Descriptive tables and figures
 

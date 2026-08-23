@@ -82,10 +82,6 @@ if (exists("int_descript")) {
   tm_days <- paste0("TM_day", 1:2, "_surv_mean")
 }
 no_tm_col <- "no_TM_surv_mean"
-natural_course_col <- paste0(
-  if (exists("NATURAL_COURSE_NAME")) NATURAL_COURSE_NAME else "Natural_course",
-  "_surv_mean"
-)
 
 label_for_tm_col <- function(col) {
   day <- sub("^TM_day(\\d+)_surv_mean$", "\\1", col)
@@ -102,17 +98,6 @@ build_surv_plot <- function(dfc, stage) {
   }
 
   surv_cols <- c(tm_days, no_tm_col)
-  if (natural_course_col %in% names(dfc)) {
-    surv_cols <- c(natural_course_col, surv_cols)
-  } else {
-    available_surv_cols <- grep("_surv_mean$", names(dfc), value = TRUE)
-    stop(
-      "Natural course column not found in stage '", stage, "' of ", rdata_file, ".\n",
-      "Loaded subgroup: ", sg, "\n",
-      "Available survival columns: ", paste(available_surv_cols, collapse = ", ")
-    )
-  }
-
   missing_cols <- setdiff(surv_cols, names(dfc))
   if (length(missing_cols)) {
     stop(
@@ -122,7 +107,6 @@ build_surv_plot <- function(dfc, stage) {
   }
 
   strategy_labels <- c(
-    stats::setNames("Natural course", natural_course_col),
     stats::setNames(vapply(tm_days, label_for_tm_col, character(1)), tm_days),
     stats::setNames("no rTM", no_tm_col)
   )
@@ -132,9 +116,6 @@ build_surv_plot <- function(dfc, stage) {
     stats::setNames(strategy_colors[tm_days], tm_days),
     no_TM_surv_mean = "#7A7A7A"
   )
-  if (natural_course_col %in% surv_cols) {
-    pal_col <- c(stats::setNames("#000000", natural_course_col), pal_col)
-  }
 
   df_long <- dfc %>%
     dplyr::select(time_points, all_of(surv_cols)) %>%

@@ -94,21 +94,22 @@ if (all(is.na(risk_diff_plot_df$ll) & is.na(risk_diff_plot_df$ul))) {
 
 p_risk_diff <- ggplot(
   risk_diff_plot_df,
-  aes(x = tm_day, y = risk_diff)
+  aes(
+    x = risk_diff,
+    y = factor(tm_day, levels = rev(tm_start_days), labels = rev(paste("TM day", tm_start_days)))
+  )
 ) +
-  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.5) +
-  geom_errorbar(
-    aes(ymin = ll, ymax = ul),
-    width = 0.3,
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.5) +
+  geom_errorbarh(
+    aes(xmin = ll, xmax = ul),
+    height = 0.2,
     linewidth = 0.7,
     na.rm = TRUE
   ) +
   geom_point(size = 2.5) +
-  geom_line(linewidth = 0.7) +
-  scale_x_continuous(breaks = tm_start_days) +
   labs(
-    x = "TM Start Day",
-    y = "Risk Difference (vs no TM)",
+    x = "Risk Difference (vs no TM)",
+    y = NULL,
     title = paste0("Risk Difference at Day ", plot_day)
   ) +
   theme_classic() +

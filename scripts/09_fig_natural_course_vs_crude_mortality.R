@@ -1,5 +1,5 @@
 ### Natural course (point estimate) vs observed crude mortality ###
-### Intended for subgroup "all" as a g-formula calibration check (no CI ribbon).
+### Full cohort (all) only — g-formula calibration check (no CI ribbon).
 if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
 library(dplyr)
 if (!requireNamespace("tidyr", quietly = TRUE)) install.packages("tidyr")
@@ -8,18 +8,17 @@ if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
 library(ggplot2)
 
 # Usage:
-#   # 1) point estimate (includes Natural_course)
 #   Rscript scripts/02_gformula.R --sg all --single --date 260822
-#   # 2) figure
-#   Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822 --sg all
+#   Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date 260822
 #
 # Optional:
 #   --stage combined|first|second   (default: combined)
 #   --tw 24
-#   --outdir ./output/
+#   --outdir ./output
 #   --allow-ci   fall back to _gformula_ci_*.RData if point-estimate file is missing
 data_dir   <- "./data"
 output_dir <- "./output"
+sg         <- "all"
 ylim       <- 0.50
 y_breaks_by <- 0.10
 dpi_out    <- 600
@@ -33,16 +32,16 @@ flag_value <- function(args, flag, default = NULL) {
   args[idx[1] + 1L]
 }
 
-date <- flag_value(args, "--date", "260822")
-if (!grepl("^[0-9]{6}$", date)) stop("--date must use YYMMDD format.")
-sg <- flag_value(args, "--sg", "all")
-if (!identical(sg, "all")) {
-  warning(
-    "[09] This figure is intended for sg=all; got sg=", sg,
-    ". Proceeding, but interpret with care.",
-    call. = FALSE
+if ("--sg" %in% args) {
+  stop(
+    "[09] This figure is for the full cohort only; do not pass --sg. ",
+    "Use: Rscript scripts/09_fig_natural_course_vs_crude_mortality.R --date YYMMDD"
   )
 }
+
+date <- flag_value(args, "--date", "260822")
+if (!grepl("^[0-9]{6}$", date)) stop("--date must use YYMMDD format.")
+
 stage <- flag_value(args, "--stage", "combined")
 if (!stage %in% c("first", "second", "combined")) {
   stop("--stage must be one of: first, second, combined")
@@ -78,7 +77,7 @@ if (!file.exists(pe_file)) {
     stop(
       "Point-estimate RData not found: ", pe_file, "\n",
       "Run first:\n",
-      "  Rscript scripts/02_gformula.R --sg ", sg, " --single --date ", date, "\n",
+      "  Rscript scripts/02_gformula.R --sg all --single --date ", date, "\n",
       "Or pass --allow-ci to fall back to ", ci_file
     )
   }
@@ -139,7 +138,6 @@ if (!file.exists(data_file)) {
 load(data_file)
 if (!exists("df")) stop("Object 'df' not found in ", data_file)
 
-# Match 02_gformula main-flow filtering for sg=all (time 0 eligibility + follow-up cap)
 sg_ids <- df %>%
   filter(time_window_index == 0) %>%
   distinct(icu_stay_id) %>%

@@ -1369,6 +1369,8 @@ calculate_confidence_intervals_survival <- function(
   
   intervention_strategies <- setdiff(strategy_cols, c(control_strategy, exclude_from_contrast))
   
+  # リスク比は右歪み・非負のため、log(RR) 上で mean ± z*SD を取り exp で戻す
+  # （元スケールの mean ± z*SD だと下限が負になり得る）
   contrast_summary <- surv_df %>%
     group_by(time_points) %>%
     summarise(
@@ -1377,8 +1379,16 @@ calculate_confidence_intervals_survival <- function(
         list(
           risk_diff_mean = ~ mean((1 - .x) - (1 - .data[[control_strategy]]), na.rm = TRUE),
           risk_diff_sd   = ~ sd((1 - .x) - (1 - .data[[control_strategy]]), na.rm = TRUE),
-          risk_ratio_mean = ~ mean((1 - .x) / (1 - .data[[control_strategy]]), na.rm = TRUE),
-          risk_ratio_sd   = ~ sd((1 - .x) / (1 - .data[[control_strategy]]), na.rm = TRUE)
+          risk_ratio_mean = ~ {
+            rr <- (1 - .x) / (1 - .data[[control_strategy]])
+            rr <- rr[is.finite(rr) & rr > 0]
+            if (length(rr) == 0L) NA_real_ else exp(mean(log(rr)))
+          },
+          risk_ratio_log_sd = ~ {
+            rr <- (1 - .x) / (1 - .data[[control_strategy]])
+            rr <- rr[is.finite(rr) & rr > 0]
+            if (length(rr) < 2L) NA_real_ else sd(log(rr))
+          }
         ),
         .names = "{.col}_{.fn}"
       ),
@@ -1391,12 +1401,15 @@ calculate_confidence_intervals_survival <- function(
     rd_mean_col <- paste0(strategy, "_risk_diff_mean")
     rd_sd_col   <- paste0(strategy, "_risk_diff_sd")
     rr_mean_col <- paste0(strategy, "_risk_ratio_mean")
-    rr_sd_col   <- paste0(strategy, "_risk_ratio_sd")
+    rr_log_sd_col <- paste0(strategy, "_risk_ratio_log_sd")
     
     out[[paste0("ul_risk_diff_", strategy)]] <- out[[rd_mean_col]] + z * out[[rd_sd_col]]
     out[[paste0("ll_risk_diff_", strategy)]] <- out[[rd_mean_col]] - z * out[[rd_sd_col]]
-    out[[paste0("ul_risk_ratio_", strategy)]] <- out[[rr_mean_col]] + z * out[[rr_sd_col]]
-    out[[paste0("ll_risk_ratio_", strategy)]] <- out[[rr_mean_col]] - z * out[[rr_sd_col]]
+    # CI on log(RR) scale, then exponentiate (guarantees positive bounds)
+    out[[paste0("ul_risk_ratio_", strategy)]] <-
+      exp(log(out[[rr_mean_col]]) + z * out[[rr_log_sd_col]])
+    out[[paste0("ll_risk_ratio_", strategy)]] <-
+      exp(log(out[[rr_mean_col]]) - z * out[[rr_log_sd_col]])
   }
   
   return(out)

@@ -1369,8 +1369,6 @@ calculate_confidence_intervals_survival <- function(
   
   intervention_strategies <- setdiff(strategy_cols, c(control_strategy, exclude_from_contrast))
   
-  # リスク比は右歪み・非負のため、log(RR) 上で mean ± z*SD を取り exp で戻す
-  # （元スケールの mean ± z*SD だと下限が負になり得る）
   contrast_summary <- surv_df %>%
     group_by(time_points) %>%
     summarise(
@@ -1405,7 +1403,6 @@ calculate_confidence_intervals_survival <- function(
     
     out[[paste0("ul_risk_diff_", strategy)]] <- out[[rd_mean_col]] + z * out[[rd_sd_col]]
     out[[paste0("ll_risk_diff_", strategy)]] <- out[[rd_mean_col]] - z * out[[rd_sd_col]]
-    # CI on log(RR) scale, then exponentiate (guarantees positive bounds)
     out[[paste0("ul_risk_ratio_", strategy)]] <-
       exp(log(out[[rr_mean_col]]) + z * out[[rr_log_sd_col]])
     out[[paste0("ll_risk_ratio_", strategy)]] <-

@@ -2,7 +2,7 @@
 -- 1. 感染症の診断（ICD-10コードに基づくスクリーニング）
 -- 2. Day 1 SOFA >= 2（敗血症の定義）
 -- 3. 臓器障害: Vasopressor（noradrenaline, adrenaline, dopamine, vasopressin, phenylephrine）または Mechanical Ventilation の使用
--- 4. 凝固障害: (PLT 30-150 x10^3/mcL または 24時間以内にPLTが30%以上減少) かつ PT-INR >= 1.4 の同時期間が存在
+-- 4. 凝固障害: (PLT 30-150 x10^3/mcL または 24時間以内にPLTが30%超の減少) かつ PT-INR > 1.4 の同時期間が存在
 -- time0の定義: 臓器障害と凝固障害の両方が起こった後の時点（遅い方）
 --
 -- exclusion criteria:
@@ -479,7 +479,7 @@ with
         where field_name = 'platelet' and value is not null and value > 0 and time < out_time
       ),
 
-      -- 24時間以内に30%以上のPLT減少を検出
+      -- 24時間以内に30%超のPLT減少を検出
       plt_decrease_intervals as (
         select distinct
           p_later.icu_stay_id,

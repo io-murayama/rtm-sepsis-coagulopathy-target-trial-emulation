@@ -464,7 +464,7 @@ with
         where field_name = 'platelet' and value is not null and value > 0 and time < out_time
       ),
 
-      -- 24時間以内に30%以上のPLT減少を検出
+      -- 24時間以内に30%超のPLT減少を検出
       plt_decrease_intervals as (
         select distinct
           p_later.icu_stay_id,
